@@ -607,6 +607,7 @@ body.dark .theme-toggle button {
       <button class="p-btn next-btn" id="pNext">➡ Next</button>
       <button class="p-btn close-btn" id="pClose">✕</button>
     </div>
+    <button class="p-btn gtts-btn" id="pGTTS" style="margin-top:6px;padding:8px 18px;font-size:0.85em;background:#4285f4;color:white;border:none;border-radius:8px;cursor:pointer;display:none">🌐 Listen via Google</button>
     <div class="p-speed">
       <span class="p-speed-label">Speed: </span>
       <button class="p-speed-btn" id="pSpeedDown">−</button>
@@ -1065,6 +1066,21 @@ questions.forEach((q) => {
 
   body.appendChild(answer);
 
+  const gLink = document.createElement('a');
+  gLink.href = '#';
+  gLink.textContent = '🌐 Googleで聞く';
+  gLink.style.cssText = 'display:block;margin:0 16px 16px;padding:10px 16px;background:#4285f4;color:white;border-radius:8px;text-decoration:none;font-size:0.9em;font-weight:700;text-align:center';
+  gLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    const audio = new Audio();
+    audio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encodeURIComponent(q.question) + '&tl=ja&client=tw-ob';
+    audio.volume = 1;
+    audio.play().catch(() => {});
+    currentAudio = audio;
+  });
+  body.appendChild(gLink);
+
   card.appendChild(header);
   card.appendChild(body);
   container.appendChild(card);
@@ -1212,16 +1228,8 @@ let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
 let currentPracticeUtterance = null;
-let ttsReady = false;
-
-if (window.speechSynthesis) {
-  const u = new SpeechSynthesisUtterance('a');
-  u.lang = 'ja-JP';
-  u.volume = 0.01;
-  u.onend = () => { ttsReady = true; };
-  u.onerror = () => { ttsReady = true; };
-  document.addEventListener('click', () => { if (!ttsReady) { speechSynthesis.speak(u); } }, { once: true });
-}
+let currentAudio = null;
+const pGTTS = document.getElementById('pGTTS');
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -1231,54 +1239,80 @@ function shuffle(arr) {
   return arr;
 }
 
+function playGoogleTTS(text) {
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  const audio = new Audio();
+  audio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encodeURIComponent(text) + '&tl=ja&client=tw-ob';
+  audio.volume = 1;
+  audio.play().catch(() => {});
+  currentAudio = audio;
+  audio.onended = () => { currentAudio = null; pGTTS.style.display = 'none'; };
+  audio.onerror = () => { currentAudio = null; };
+}
+
+pGTTS.addEventListener('click', () => {
+  playGoogleTTS(pQuestion.textContent);
+});
+
 function speakText(text, onStart, onEnd) {
-  if (!window.speechSynthesis) {
-    pStatus.textContent = '⚠ Speech not available on this browser';
-    return;
-  }
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+  let ended = false;
+  let useFallback = false;
+
   try {
-    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-    currentPracticeUtterance = null;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja-JP';
-    utterance.rate = practiceSpeed;
-    utterance.pitch = 1;
-    currentPracticeUtterance = utterance;
-    let ended = false;
-    let timeout = setTimeout(() => {
-      if (!ended) { ended = true; pStatus.textContent = '⚠ TTS not responding. Try a different browser.'; if (onEnd) onEnd(); }
-    }, 4000);
-    utterance.onstart = () => { if (!ended) { clearTimeout(timeout); if (onStart) onStart(); } };
-    utterance.onend = () => { if (!ended) { ended = true; clearTimeout(timeout); if (onEnd) onEnd(); } };
-    utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(timeout); pStatus.textContent = '⚠ TTS error. Try again.'; if (onEnd) onEnd(); } };
-    window.speechSynthesis.speak(utterance);
-  } catch (e) {
-    pStatus.textContent = '⚠ TTS error: ' + e.message;
+    if (window.speechSynthesis) {
+      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ja-JP';
+      utterance.rate = practiceSpeed;
+      currentPracticeUtterance = utterance;
+      let timeout = setTimeout(() => {
+        if (!ended && !window.speechSynthesis.speaking) {
+          useFallback = true;
+          ended = true;
+          pGTTS.style.display = '';
+          pStatus.textContent = '⚠ Browser TTS not available. Tap "Listen via Google" below.';
+          if (onEnd) onEnd();
+        }
+      }, 1500);
+      utterance.onstart = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = 'none'; if (onStart) onStart(); } };
+      utterance.onend = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = 'none'; if (onEnd) onEnd(); } };
+      utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = ''; pStatus.textContent = '⚠ TTS error. Tap "Listen via Google" below.'; if (onEnd) onEnd(); } };
+      window.speechSynthesis.speak(utterance);
+      return;
+    }
+  } catch (e) {}
+
+  if (!ended) {
+    pGTTS.style.display = '';
+    pStatus.textContent = 'Tap "Listen via Google" below.';
     if (onEnd) onEnd();
   }
 }
 
 function speakCardText(text, rate, btn) {
-  if (!window.speechSynthesis) return;
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   try {
-    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-    if (currentTtsUtterance) { currentTtsUtterance = null; currentTtsBtn = null; }
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja-JP';
-    utterance.rate = rate;
-    utterance.pitch = 1;
-    utterance.onend = () => { btn.classList.remove('playing'); if (currentTtsBtn === btn) currentTtsBtn = null; if (currentTtsUtterance === utterance) currentTtsUtterance = null; };
-    utterance.onerror = () => { btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null; };
-    window.speechSynthesis.speak(utterance);
-    btn.classList.add('playing');
-    currentTtsUtterance = utterance;
-    currentTtsBtn = btn;
-    setTimeout(() => {
-      if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
-        btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null;
-      }
-    }, 4000);
+    if (window.speechSynthesis) {
+      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ja-JP';
+      utterance.rate = rate;
+      utterance.onend = () => { btn.classList.remove('playing'); if (currentTtsBtn === btn) currentTtsBtn = null; if (currentTtsUtterance === utterance) currentTtsUtterance = null; };
+      utterance.onerror = () => { btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null; };
+      window.speechSynthesis.speak(utterance);
+      btn.classList.add('playing');
+      currentTtsUtterance = utterance;
+      currentTtsBtn = btn;
+      setTimeout(() => {
+        if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
+          btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null;
+        }
+      }, 1500);
+      return;
+    }
   } catch (e) {}
+  btn.classList.remove('playing');
 }
 
 function startPractice() {
