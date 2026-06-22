@@ -953,7 +953,6 @@ const pNext = document.getElementById('pNext');
 const pClose = document.getElementById('pClose');
 const pStatus = document.getElementById('pStatus');
 const pSearchInput = document.getElementById('pSearchInput');
-const pAudio = document.getElementById('pAudio');
 const aiBtn = document.getElementById('aiBtn');
 
 let practiceQueue = [];
@@ -963,6 +962,7 @@ let isAnswerSpeaking = false;
 let practiceSpeed = 1;
 let jaVoice = null;
 let audioCtx = null;
+let currentPracticeUtterance = null;
 
 function unlockAudio() {
   if (audioCtx) return;
@@ -1003,8 +1003,9 @@ function shuffle(arr) {
   return arr;
 }
 
-function speakText(text, onStart, onEnd, isAnswer) {
+function speakText(text, onStart, onEnd) {
   window.speechSynthesis.cancel();
+  currentPracticeUtterance = null;
   speakWithSS(text, onStart, onEnd);
 }
 
@@ -1019,19 +1020,26 @@ function speakWithSS(text, onStart, onEnd) {
     utterance.rate = practiceSpeed;
     utterance.pitch = 1;
     if (jaVoice) utterance.voice = jaVoice;
-
-    let started = false;
+    currentPracticeUtterance = utterance;
     let ended = false;
     if (onStart) {
-      utterance.onstart = () => { started = true; onStart(); };
-      setTimeout(() => { if (!started && window.speechSynthesis.speaking) { started = true; onStart(); } }, 500);
+      utterance.onstart = () => { if (!ended) onStart(); };
     }
     if (onEnd) {
-      utterance.onend = () => { ended = true; onEnd(); };
+      utterance.onend = () => { if (!ended) { ended = true; onEnd(); } };
     }
     window.speechSynthesis.speak(utterance);
     if (window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
+    }
+    let ttsStartFailed = setTimeout(() => {
+      if (!window.speechSynthesis.speaking && !ended) {
+        pStatus.textContent = '⚠ TTS not responding on this device. Try Chrome or Edge desktop browser.';
+        if (onEnd) { ended = true; onEnd(); }
+      }
+    }, 2000);
+    if (onEnd) {
+      utterance.onend = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); onEnd(); } };
     }
   } catch (e) {
     pStatus.textContent = '⚠ TTS error: ' + e.message;
@@ -1056,6 +1064,13 @@ function speakCardText(text, rate, btn) {
   btn.classList.add('playing');
   currentTtsUtterance = utterance;
   currentTtsBtn = btn;
+  setTimeout(() => {
+    if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
+      btn.classList.remove('playing');
+      currentTtsUtterance = null;
+      currentTtsBtn = null;
+    }
+  }, 2000);
 }
 
 function startPractice() {
@@ -1154,8 +1169,7 @@ pSpeakAnswer.addEventListener('click', () => {
       isAnswerSpeaking = false;
       pSpeakAnswer.textContent = '🔊 Speak Answer';
       pStatus.textContent = 'Compare your answer with the sample';
-    },
-    true
+    }
   );
 });
 
