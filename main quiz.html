@@ -1004,7 +1004,9 @@ function shuffle(arr) {
 }
 
 function speakText(text, onStart, onEnd) {
-  window.speechSynthesis.cancel();
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
   currentPracticeUtterance = null;
   speakWithSS(text, onStart, onEnd);
 }
@@ -1022,24 +1024,18 @@ function speakWithSS(text, onStart, onEnd) {
     if (jaVoice) utterance.voice = jaVoice;
     currentPracticeUtterance = utterance;
     let ended = false;
-    if (onStart) {
-      utterance.onstart = () => { if (!ended) onStart(); };
-    }
-    if (onEnd) {
-      utterance.onend = () => { if (!ended) { ended = true; onEnd(); } };
-    }
-    window.speechSynthesis.speak(utterance);
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
     let ttsStartFailed = setTimeout(() => {
       if (!window.speechSynthesis.speaking && !ended) {
         pStatus.textContent = '⚠ TTS not responding on this device. Try Chrome or Edge desktop browser.';
         if (onEnd) { ended = true; onEnd(); }
       }
-    }, 2000);
-    if (onEnd) {
-      utterance.onend = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); onEnd(); } };
+    }, 3000);
+    utterance.onstart = () => { if (!ended) { clearTimeout(ttsStartFailed); if (onStart) onStart(); } };
+    utterance.onend = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); if (onEnd) onEnd(); } };
+    utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); pStatus.textContent = '⚠ TTS error. Try again.'; if (onEnd) onEnd(); } };
+    window.speechSynthesis.speak(utterance);
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
     }
   } catch (e) {
     pStatus.textContent = '⚠ TTS error: ' + e.message;
@@ -1049,7 +1045,9 @@ function speakWithSS(text, onStart, onEnd) {
 
 function speakCardText(text, rate, btn) {
   if (!window.speechSynthesis) return;
-  if (currentTtsUtterance) window.speechSynthesis.cancel();
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'ja';
   utterance.rate = rate;
@@ -1059,6 +1057,11 @@ function speakCardText(text, rate, btn) {
     btn.classList.remove('playing');
     if (currentTtsBtn === btn) currentTtsBtn = null;
     if (currentTtsUtterance === utterance) currentTtsUtterance = null;
+  };
+  utterance.onerror = () => {
+    btn.classList.remove('playing');
+    currentTtsUtterance = null;
+    currentTtsBtn = null;
   };
   window.speechSynthesis.speak(utterance);
   btn.classList.add('playing');
@@ -1070,7 +1073,7 @@ function speakCardText(text, rate, btn) {
       currentTtsUtterance = null;
       currentTtsBtn = null;
     }
-  }, 2000);
+  }, 3000);
 }
 
 function startPractice() {
