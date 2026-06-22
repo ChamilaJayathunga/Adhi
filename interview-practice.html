@@ -607,7 +607,6 @@ body.dark .theme-toggle button {
       <button class="p-btn next-btn" id="pNext">➡ Next</button>
       <button class="p-btn close-btn" id="pClose">✕</button>
     </div>
-    <button class="p-btn gtts-btn" id="pGTTS" style="margin-top:6px;padding:8px 18px;font-size:0.85em;background:#4285f4;color:white;border:none;border-radius:8px;cursor:pointer;display:none">🌐 Listen via Google</button>
     <div class="p-speed">
       <span class="p-speed-label">Speed: </span>
       <button class="p-speed-btn" id="pSpeedDown">−</button>
@@ -982,8 +981,6 @@ const questions = [
 ];
 
 const container = document.getElementById('questions');
-let currentTtsUtterance = null;
-let currentTtsBtn = null;
 
 questions.forEach((q) => {
   const card = document.createElement('div');
@@ -1035,7 +1032,7 @@ questions.forEach((q) => {
       speedBtns.forEach((b) => b.classList.remove('active'));
       sb.classList.add('active');
       if (btn.classList.contains('playing')) {
-        window.speechSynthesis.cancel();
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
         speakCardText(q.question, cardSpeed, btn);
       }
     });
@@ -1089,21 +1086,12 @@ questions.forEach((q) => {
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-
     if (btn.classList.contains('playing')) {
-      if (currentTtsBtn === btn || currentTtsUtterance) {
-        window.speechSynthesis.cancel();
-        btn.classList.remove('playing');
-        currentTtsUtterance = null;
-        currentTtsBtn = null;
-      }
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      btn.classList.remove('playing');
       return;
     }
-
-    if (currentTtsUtterance) {
-      window.speechSynthesis.cancel();
-      if (currentTtsBtn) currentTtsBtn.classList.remove('playing');
-    }
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     speakCardText(q.question, cardSpeed, btn);
   });
 
@@ -1227,9 +1215,7 @@ let practiceIndex = 0;
 let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
-let currentPracticeUtterance = null;
 let currentAudio = null;
-const pGTTS = document.getElementById('pGTTS');
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -1239,87 +1225,35 @@ function shuffle(arr) {
   return arr;
 }
 
-function playGoogleTTS(text) {
+function playAudio(text, rate, onStart, onEnd) {
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   const audio = new Audio();
   audio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encodeURIComponent(text) + '&tl=ja&client=tw-ob';
   audio.volume = 1;
-  audio.play().catch(() => {});
+  audio.playbackRate = rate;
+  if (onStart) { audio.onplaying = onStart; audio.onerror = () => { if (onEnd) onEnd(); }; }
+  if (onEnd) audio.onended = onEnd;
+  audio.play().catch(() => { if (onEnd) onEnd(); });
   currentAudio = audio;
-  audio.onended = () => { currentAudio = null; pGTTS.style.display = 'none'; };
-  audio.onerror = () => { currentAudio = null; };
+  return audio;
 }
 
-pGTTS.addEventListener('click', () => {
-  playGoogleTTS(pQuestion.textContent);
-});
-
 function speakText(text, onStart, onEnd) {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  let ended = false;
-  let useFallback = false;
-
-  try {
-    if (window.speechSynthesis) {
-      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'ja-JP';
-      utterance.rate = practiceSpeed;
-      currentPracticeUtterance = utterance;
-      let timeout = setTimeout(() => {
-        if (!ended && !window.speechSynthesis.speaking) {
-          useFallback = true;
-          ended = true;
-          pGTTS.style.display = '';
-          pStatus.textContent = '⚠ Browser TTS not available. Tap "Listen via Google" below.';
-          if (onEnd) onEnd();
-        }
-      }, 1500);
-      utterance.onstart = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = 'none'; if (onStart) onStart(); } };
-      utterance.onend = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = 'none'; if (onEnd) onEnd(); } };
-      utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(timeout); pGTTS.style.display = ''; pStatus.textContent = '⚠ TTS error. Tap "Listen via Google" below.'; if (onEnd) onEnd(); } };
-      window.speechSynthesis.speak(utterance);
-      return;
-    }
-  } catch (e) {}
-
-  if (!ended) {
-    pGTTS.style.display = '';
-    pStatus.textContent = 'Tap "Listen via Google" below.';
-    if (onEnd) onEnd();
-  }
+  playAudio(text, practiceSpeed, onStart, onEnd);
 }
 
 function speakCardText(text, rate, btn) {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-  try {
-    if (window.speechSynthesis) {
-      if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'ja-JP';
-      utterance.rate = rate;
-      utterance.onend = () => { btn.classList.remove('playing'); if (currentTtsBtn === btn) currentTtsBtn = null; if (currentTtsUtterance === utterance) currentTtsUtterance = null; };
-      utterance.onerror = () => { btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null; };
-      window.speechSynthesis.speak(utterance);
-      btn.classList.add('playing');
-      currentTtsUtterance = utterance;
-      currentTtsBtn = btn;
-      setTimeout(() => {
-        if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
-          btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null;
-        }
-      }, 1500);
-      return;
-    }
-  } catch (e) {}
-  btn.classList.remove('playing');
+  btn.classList.add('playing');
+  const audio = playAudio(text, rate,
+    () => {},
+    () => { btn.classList.remove('playing'); }
+  );
+  if (audio) {
+    audio.onerror = () => { btn.classList.remove('playing'); };
+  }
 }
 
 function startPractice() {
-  if (!window.speechSynthesis) {
-    pStatus.textContent = '⚠ Speech synthesis not supported on this browser';
-    return;
-  }
   practiceQueue = shuffle([...questions]);
   practiceIndex = 0;
   pSearchInput.value = '';
@@ -1341,7 +1275,7 @@ function showPracticeQuestion() {
   pSpeak.textContent = '🔊 Speak Question';
   pSpeak.classList.remove('listening');
   pSpeakAnswer.textContent = '🔊 Speak Answer';
-  window.speechSynthesis.cancel();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   isSpeaking = false;
   isAnswerSpeaking = false;
   pAnswerText.dataset.rawAnswer = '';
@@ -1364,7 +1298,7 @@ function renderAnswerSentences(text) {
 
 pSpeak.addEventListener('click', () => {
   if (isSpeaking) {
-    window.speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     pSpeak.textContent = '🔊 Speak Question';
     pSpeak.classList.remove('listening');
     pStatus.textContent = 'Press "Speak Question" to hear the AI ask';
@@ -1391,7 +1325,7 @@ pSpeak.addEventListener('click', () => {
 
 pSpeakAnswer.addEventListener('click', () => {
   if (isAnswerSpeaking) {
-    window.speechSynthesis.cancel();
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     pSpeakAnswer.textContent = '🔊 Speak Answer';
     isAnswerSpeaking = false;
     return;
@@ -1426,7 +1360,7 @@ pNext.addEventListener('click', () => {
 });
 
 pClose.addEventListener('click', () => {
-  window.speechSynthesis.cancel();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   practiceOverlay.classList.remove('active');
   aiBtn.disabled = false;
 });
