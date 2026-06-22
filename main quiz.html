@@ -960,40 +960,17 @@ let practiceIndex = 0;
 let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
-let jaVoice = null;
-let audioCtx = null;
 let currentPracticeUtterance = null;
-
-function unlockAudio() {
-  if (audioCtx) return;
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-  } catch (e) {}
-}
-
-function warmupSpeech() {
-  if (!window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance(' ');
-  u.volume = 0;
-  u.rate = 1;
-  speechSynthesis.speak(u);
-}
+let ttsReady = false;
 
 if (window.speechSynthesis) {
-  function loadJaVoice() {
-    const voices = speechSynthesis.getVoices();
-    jaVoice = voices.find(v => v.lang.startsWith('ja')) || null;
-  }
-  loadJaVoice();
-  speechSynthesis.onvoiceschanged = loadJaVoice;
-  setTimeout(loadJaVoice, 1500);
+  const u = new SpeechSynthesisUtterance('a');
+  u.lang = 'ja-JP';
+  u.volume = 0.01;
+  u.onend = () => { ttsReady = true; };
+  u.onerror = () => { ttsReady = true; };
+  document.addEventListener('click', () => { if (!ttsReady) { speechSynthesis.speak(u); } }, { once: true });
 }
-
-document.addEventListener('click', () => {
-  unlockAudio();
-  if (!jaVoice) warmupSpeech();
-}, { once: true });
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -1004,39 +981,26 @@ function shuffle(arr) {
 }
 
 function speakText(text, onStart, onEnd) {
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-  }
-  currentPracticeUtterance = null;
-  speakWithSS(text, onStart, onEnd);
-}
-
-function speakWithSS(text, onStart, onEnd) {
   if (!window.speechSynthesis) {
     pStatus.textContent = '⚠ Speech not available on this browser';
     return;
   }
   try {
+    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    currentPracticeUtterance = null;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja';
+    utterance.lang = 'ja-JP';
     utterance.rate = practiceSpeed;
     utterance.pitch = 1;
-    if (jaVoice) utterance.voice = jaVoice;
     currentPracticeUtterance = utterance;
     let ended = false;
-    let ttsStartFailed = setTimeout(() => {
-      if (!window.speechSynthesis.speaking && !ended) {
-        pStatus.textContent = '⚠ TTS not responding on this device. Try Chrome or Edge desktop browser.';
-        if (onEnd) { ended = true; onEnd(); }
-      }
-    }, 3000);
-    utterance.onstart = () => { if (!ended) { clearTimeout(ttsStartFailed); if (onStart) onStart(); } };
-    utterance.onend = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); if (onEnd) onEnd(); } };
-    utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(ttsStartFailed); pStatus.textContent = '⚠ TTS error. Try again.'; if (onEnd) onEnd(); } };
+    let timeout = setTimeout(() => {
+      if (!ended) { ended = true; pStatus.textContent = '⚠ TTS not responding. Try a different browser.'; if (onEnd) onEnd(); }
+    }, 4000);
+    utterance.onstart = () => { if (!ended) { clearTimeout(timeout); if (onStart) onStart(); } };
+    utterance.onend = () => { if (!ended) { ended = true; clearTimeout(timeout); if (onEnd) onEnd(); } };
+    utterance.onerror = () => { if (!ended) { ended = true; clearTimeout(timeout); pStatus.textContent = '⚠ TTS error. Try again.'; if (onEnd) onEnd(); } };
     window.speechSynthesis.speak(utterance);
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-    }
   } catch (e) {
     pStatus.textContent = '⚠ TTS error: ' + e.message;
     if (onEnd) onEnd();
@@ -1045,35 +1009,25 @@ function speakWithSS(text, onStart, onEnd) {
 
 function speakCardText(text, rate, btn) {
   if (!window.speechSynthesis) return;
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-  }
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'ja';
-  utterance.rate = rate;
-  utterance.pitch = 1;
-  if (jaVoice) utterance.voice = jaVoice;
-  utterance.onend = () => {
-    btn.classList.remove('playing');
-    if (currentTtsBtn === btn) currentTtsBtn = null;
-    if (currentTtsUtterance === utterance) currentTtsUtterance = null;
-  };
-  utterance.onerror = () => {
-    btn.classList.remove('playing');
-    currentTtsUtterance = null;
-    currentTtsBtn = null;
-  };
-  window.speechSynthesis.speak(utterance);
-  btn.classList.add('playing');
-  currentTtsUtterance = utterance;
-  currentTtsBtn = btn;
-  setTimeout(() => {
-    if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
-      btn.classList.remove('playing');
-      currentTtsUtterance = null;
-      currentTtsBtn = null;
-    }
-  }, 3000);
+  try {
+    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    if (currentTtsUtterance) { currentTtsUtterance = null; currentTtsBtn = null; }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = rate;
+    utterance.pitch = 1;
+    utterance.onend = () => { btn.classList.remove('playing'); if (currentTtsBtn === btn) currentTtsBtn = null; if (currentTtsUtterance === utterance) currentTtsUtterance = null; };
+    utterance.onerror = () => { btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null; };
+    window.speechSynthesis.speak(utterance);
+    btn.classList.add('playing');
+    currentTtsUtterance = utterance;
+    currentTtsBtn = btn;
+    setTimeout(() => {
+      if (btn.classList.contains('playing') && !window.speechSynthesis.speaking) {
+        btn.classList.remove('playing'); currentTtsUtterance = null; currentTtsBtn = null;
+      }
+    }, 4000);
+  } catch (e) {}
 }
 
 function startPractice() {
