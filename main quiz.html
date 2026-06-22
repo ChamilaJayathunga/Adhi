@@ -962,23 +962,38 @@ let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
 let jaVoice = null;
+let audioCtx = null;
 
-// Pre-load available Japanese voice
+function unlockAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+
+function warmupSpeech() {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(' ');
+  u.volume = 0;
+  u.rate = 1;
+  speechSynthesis.speak(u);
+}
+
 if (window.speechSynthesis) {
-  // Load voices immediately and also on voiceschanged
   function loadJaVoice() {
     const voices = speechSynthesis.getVoices();
     jaVoice = voices.find(v => v.lang.startsWith('ja')) || null;
-    if (!jaVoice) {
-      // Try softer match
-      jaVoice = voices.find(v => v.lang.startsWith('ja-JP') || v.lang.startsWith('jap')) || null;
-    }
   }
   loadJaVoice();
   speechSynthesis.onvoiceschanged = loadJaVoice;
-  // Retry after a delay for iOS
-  setTimeout(loadJaVoice, 1000);
+  setTimeout(loadJaVoice, 1500);
 }
+
+document.addEventListener('click', () => {
+  unlockAudio();
+  if (!jaVoice) warmupSpeech();
+}, { once: true });
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -1000,7 +1015,7 @@ function speakWithSS(text, onStart, onEnd) {
   }
   try {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'ja-JP';
+    utterance.lang = 'ja';
     utterance.rate = practiceSpeed;
     utterance.pitch = 1;
     if (jaVoice) utterance.voice = jaVoice;
@@ -1013,9 +1028,6 @@ function speakWithSS(text, onStart, onEnd) {
     }
     if (onEnd) {
       utterance.onend = () => { ended = true; onEnd(); };
-      setTimeout(() => {
-        if (!ended && window.speechSynthesis.speaking === false) { ended = true; onEnd(); }
-      }, Math.max(3000, text.length * 80 / practiceSpeed));
     }
     window.speechSynthesis.speak(utterance);
     if (window.speechSynthesis.paused) {
@@ -1031,7 +1043,7 @@ function speakCardText(text, rate, btn) {
   if (!window.speechSynthesis) return;
   if (currentTtsUtterance) window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'ja-JP';
+  utterance.lang = 'ja';
   utterance.rate = rate;
   utterance.pitch = 1;
   if (jaVoice) utterance.voice = jaVoice;
