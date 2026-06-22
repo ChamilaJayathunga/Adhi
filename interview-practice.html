@@ -1216,6 +1216,7 @@ let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
 let currentAudio = null;
+let googleFallback = null;
 let audioCtx = null;
 
 function unlockAudio() {
@@ -1238,16 +1239,10 @@ function tryWebSpeech(text, rate, onStart, onEnd) {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'ja-JP';
     utterance.rate = rate;
-    let started = false;
-    let timeout = setTimeout(() => {
-      if (!started) {
-        if (onEnd) onEnd();
-      }
-    }, 800);
-    utterance.onstart = () => { started = true; clearTimeout(timeout); if (onStart) onStart(); };
-    utterance.onend = () => { clearTimeout(timeout); if (onEnd) onEnd(); };
-    utterance.onerror = () => { clearTimeout(timeout); if (onEnd) onEnd(); };
     if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    utterance.onstart = () => { if (onStart) onStart(); };
+    utterance.onend = () => { if (onEnd) onEnd(); };
+    utterance.onerror = () => { if (onEnd) onEnd(); };
     window.speechSynthesis.speak(utterance);
     return true;
   } catch (e) { return false; }
@@ -1267,14 +1262,34 @@ function playGoogleAudio(text, rate, onStart, onEnd) {
 }
 
 function speakText(text, onStart, onEnd) {
-  const started = tryWebSpeech(text, practiceSpeed, onStart, onEnd);
-  if (!started) playGoogleAudio(text, practiceSpeed, onStart, onEnd);
+  let called = false;
+  function done() { if (!called) { called = true; if (onEnd) onEnd(); } }
+  googleFallback = setTimeout(() => {
+    if (!called) { called = true; playGoogleAudio(text, practiceSpeed, onStart, onEnd); }
+  }, 700);
+  const ok = tryWebSpeech(text, practiceSpeed,
+    () => { clearTimeout(googleFallback); if (!called) { called = true; if (onStart) onStart(); } },
+    done
+  );
+  if (!ok) {
+    clearTimeout(googleFallback);
+    playGoogleAudio(text, practiceSpeed, onStart, onEnd);
+  }
 }
 
 function speakCardText(text, rate, btn) {
   btn.classList.add('playing');
-  const ok = tryWebSpeech(text, rate, () => {}, () => { btn.classList.remove('playing'); });
+  let called = false;
+  function cardDone() { if (!called) { called = true; btn.classList.remove('playing'); } }
+  googleFallback = setTimeout(() => {
+    if (!called) { called = true; playGoogleAudio(text, rate, () => {}, () => { btn.classList.remove('playing'); }); }
+  }, 700);
+  const ok = tryWebSpeech(text, rate,
+    () => { clearTimeout(googleFallback); called = true; },
+    cardDone
+  );
   if (!ok) {
+    clearTimeout(googleFallback);
     playGoogleAudio(text, rate, () => {}, () => { btn.classList.remove('playing'); });
   }
 }
