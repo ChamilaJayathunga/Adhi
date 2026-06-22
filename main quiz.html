@@ -965,6 +965,13 @@ let isSpeaking = false;
 let isAnswerSpeaking = false;
 let practiceSpeed = 1;
 let currentAudio = null;
+let audioCtx = null;
+
+function unlockAudio() {
+  if (audioCtx) return;
+  try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
+}
+document.addEventListener('click', unlockAudio, { once: true });
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -974,31 +981,48 @@ function shuffle(arr) {
   return arr;
 }
 
-function playAudio(text, rate, onStart, onEnd) {
+function tryWebSpeech(text, rate, onStart, onEnd) {
+  if (!window.speechSynthesis) return false;
+  try {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'ja-JP';
+    utterance.rate = rate;
+    let started = false;
+    let timeout = setTimeout(() => {
+      if (!started) { if (onEnd) onEnd(); }
+    }, 800);
+    utterance.onstart = () => { started = true; clearTimeout(timeout); if (onStart) onStart(); };
+    utterance.onend = () => { clearTimeout(timeout); if (onEnd) onEnd(); };
+    utterance.onerror = () => { clearTimeout(timeout); if (onEnd) onEnd(); };
+    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (e) { return false; }
+}
+
+function playGoogleAudio(text, rate, onStart, onEnd) {
   if (currentAudio) { currentAudio.pause(); currentAudio = null; }
   const audio = new Audio();
   audio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q=' + encodeURIComponent(text) + '&tl=ja&client=tw-ob';
   audio.volume = 1;
   audio.playbackRate = rate;
-  if (onStart) { audio.onplaying = onStart; audio.onerror = () => { if (onEnd) onEnd(); }; }
+  if (onStart) audio.onplaying = onStart;
   if (onEnd) audio.onended = onEnd;
+  audio.onerror = () => { if (onEnd) onEnd(); };
   audio.play().catch(() => { if (onEnd) onEnd(); });
   currentAudio = audio;
-  return audio;
 }
 
 function speakText(text, onStart, onEnd) {
-  playAudio(text, practiceSpeed, onStart, onEnd);
+  const started = tryWebSpeech(text, practiceSpeed, onStart, onEnd);
+  if (!started) playGoogleAudio(text, practiceSpeed, onStart, onEnd);
 }
 
 function speakCardText(text, rate, btn) {
   btn.classList.add('playing');
-  const audio = playAudio(text, rate,
-    () => {},
-    () => { btn.classList.remove('playing'); }
-  );
-  if (audio) {
-    audio.onerror = () => { btn.classList.remove('playing'); };
+  const ok = tryWebSpeech(text, rate, () => {}, () => { btn.classList.remove('playing'); });
+  if (!ok) {
+    playGoogleAudio(text, rate, () => {}, () => { btn.classList.remove('playing'); });
   }
 }
 
